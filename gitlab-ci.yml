@@ -1,0 +1,47 @@
+# Not making this as a hidden file for this evaluation. Normally, the name of the gitlab pipeline file is .gitlab-ci-yml
+
+stages:
+  - build_and_push
+  - deploy
+
+variables:
+  IMAGE_TAG: "${CI_COMMIT_REF_NAME}-${CI_COMMIT_TIMESTAMP}"
+  HELM_REGISTRY: "https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/helm/stable"
+
+build_and_push:
+  stage: build_and_push
+  image: docker
+  services:
+    - docker:26.0.0-dind
+  script:
+    - echo "Logging in to Gitlab docker registry..."
+    - docker login $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD
+    - echo "Building the docker image..."
+    - docker build -t $CI_REGISTRY_IMAGE:$IMAGE_TAG .
+    - echo "Pushing the docker image..."
+    - docker push $CI_REGISTRY_IMAGE:$IMAGE_TAG
+  only:
+    - develop
+    - production
+
+deploy:
+  stage: deploy
+  needs: ["build_and_push"]
+  image:
+    name: alpine/helm:3.14.3
+    entrypoint: [""]
+  before_script:
+    - echo "Installing k8s deployment dependencies..."
+    - apk add python3 py3-pip
+    - pip3 install awscli
+    - helm registry login -u gitlab-ci-token -p $CI_JOB_TOKEN
+  script:
+    - helm repo add gitlab-registry $HELM_REGISTRY
+    # AWS Access Key ID, Access Key Secret, and AWS Region is stored in CI/CD variables and made avaiable to this pipeline. The access key have minimal permission set.
+    - AWS_ACCESS_KEY_ID=$AWS_KEY_ID AWS_SECRET_ACCESS_KEY=$AWS_SECRET_KEY aws eks update-kubeconfig --region $AWS_REGION --name k8s-cluster
+    - echo "Deploying the latest ${CI_COMMIT_REF_NAME} image to k8s cluster..."
+    - helm upgrade --install panaisa-task --set image.tag=$IMAGE_TAG gitlab-registry/panasia-task-chart --namespace $CI_COMMIT_REF_NAME
+    - echo "Pipeline successful"
+  only:
+    - develop
+    - production

@@ -1,0 +1,28 @@
+replicaCount: 1
+
+image:
+  repository: <repository_name>
+  pullPolicy: Always
+  tag: <tag_name_to_be_overrided_by_cicd>
+  container_port: 5000
+
+healthCheckPath: /panasia
+
+fullnameOverride: "panasia-task"
+
+service:
+  type: ClusterIP
+  port: 5000
+
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:<aws_region>:<aws_account_id>:certificate/<certificate_id>
+  hosts:
+    - host:
+      paths:
+        - path: /panasia
+          pathType: Prefix
